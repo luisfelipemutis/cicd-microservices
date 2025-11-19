@@ -27,6 +27,16 @@ jobs:
         resource-group: ${{ env.RESOURCE_GROUP }}
         cluster-name: ${{ env.AKS_CLUSTER }}
 
+    # ⬇️⬇️⬇️ NUEVO PASO - AGREGAR AQUÍ ⬇️⬇️⬇️
+    - name: Attach ACR to AKS
+      run: |
+        echo "🔗 Attaching ACR to AKS for image pull access..."
+        az aks update \
+          --resource-group ${{ env.RESOURCE_GROUP }} \
+          --name ${{ env.AKS_CLUSTER }} \
+          --attach-acr $(az acr list --resource-group ${{ env.RESOURCE_GROUP }} --query [0].name -o tsv)
+    # ⬆️⬆️⬆️ NUEVO PASO - AGREGAR AQUÍ ⬆️⬆️⬆️
+
     - name: Deploy to AKS
       run: |
         # Replace image placeholders in manifests
