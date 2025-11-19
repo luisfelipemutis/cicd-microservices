@@ -31,6 +31,8 @@ spec:
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 5
+      imagePullSecrets:
+      - name: acr-pull-secret
 ---
 apiVersion: v1
 kind: Service

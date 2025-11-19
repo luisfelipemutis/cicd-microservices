@@ -17,3 +17,5 @@ spec:
       containers:
       - name: worker
         image: IMAGE_PLACEHOLDER_WORKER
+      imagePullSecrets:
+      - name: acr-pull-secret

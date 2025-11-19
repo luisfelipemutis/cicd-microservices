@@ -27,15 +27,14 @@ jobs:
         resource-group: ${{ env.RESOURCE_GROUP }}
         cluster-name: ${{ env.AKS_CLUSTER }}
 
-    # ⬇️⬇️⬇️ NUEVO PASO - AGREGAR AQUÍ ⬇️⬇️⬇️
-    - name: Attach ACR to AKS
+    - name: Create ACR pull secret
       run: |
-        echo "🔗 Attaching ACR to AKS for image pull access..."
-        az aks update \
-          --resource-group ${{ env.RESOURCE_GROUP }} \
-          --name ${{ env.AKS_CLUSTER }} \
-          --attach-acr $(az acr list --resource-group ${{ env.RESOURCE_GROUP }} --query [0].name -o tsv)
-    # ⬆️⬆️⬆️ NUEVO PASO - AGREGAR AQUÍ ⬆️⬆️⬆️
+        echo "🔐 Creating ACR pull secret..."
+        kubectl create secret docker-registry acr-pull-secret \
+          --docker-server=${{ secrets.ACR_LOGIN_SERVER }} \
+          --docker-username=${{ secrets.ACR_USERNAME }} \
+          --docker-password=${{ secrets.ACR_PASSWORD }} \
+          --dry-run=client -o yaml | kubectl apply -f -
 
     - name: Deploy to AKS
       run: |
