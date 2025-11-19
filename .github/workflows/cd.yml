@@ -1,10 +1,9 @@
-# .github/workflows/cd.yml
 name: CD - Deploy to AKS
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Permite ejecución manual
+  workflow_dispatch:
 
 env:
   KUBE_NAMESPACE: default
@@ -17,8 +16,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Kustomize
-      uses: imranismail/setup-kustomize@v2
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Configure AKS credentials
       uses: azure/aks-set-context@v3
@@ -46,5 +47,6 @@ jobs:
     - name: Health check
       run: |
         sleep 30
-        API_URL=$(kubectl get service api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-        curl -f http://$API_URL/health || exit 1
+        API_IP=$(kubectl get service api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "Testing API at: http://$API_IP/health"
+        curl -f http://$API_IP/health || exit 1
