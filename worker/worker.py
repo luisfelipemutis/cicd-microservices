@@ -1,11 +1,15 @@
 import time
-import random
 import os
+import sys
 
-def process_task():
-    while True:
-        print(f"Worker processing task - {os.environ.get('HOSTNAME', 'unknown')}")
-        time.sleep(30)
+print("🚀 Worker service started successfully!")
+print(f"📝 Running in pod: {os.environ.get('HOSTNAME', 'unknown')}")
+sys.stdout.flush()
 
-if __name__ == '__main__':
-    process_task()
+counter = 0
+while True:
+    counter += 1
+    message = f"🔄 Worker processing task #{counter} - Time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+    print(message)
+    sys.stdout.flush()
+    time.sleep(30)
