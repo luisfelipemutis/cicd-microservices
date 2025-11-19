@@ -1,0 +1,50 @@
+# .github/workflows/cd.yml
+name: CD - Deploy to AKS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Permite ejecución manual
+
+env:
+  KUBE_NAMESPACE: default
+  RESOURCE_GROUP: rg-cicd-mexico
+  AKS_CLUSTER: aks-cicd-cluster
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Kustomize
+      uses: imranismail/setup-kustomize@v2
+
+    - name: Configure AKS credentials
+      uses: azure/aks-set-context@v3
+      with:
+        resource-group: ${{ env.RESOURCE_GROUP }}
+        cluster-name: ${{ env.AKS_CLUSTER }}
+
+    - name: Deploy to AKS
+      run: |
+        # Replace image placeholders in manifests
+        sed -i "s|IMAGE_PLACEHOLDER_API|${{ secrets.ACR_LOGIN_SERVER }}/api:${{ github.sha }}|g" manifests/api-deployment.yaml
+        sed -i "s|IMAGE_PLACEHOLDER_WORKER|${{ secrets.ACR_LOGIN_SERVER }}/worker:${{ github.sha }}|g" manifests/worker-deployment.yaml
+        
+        # Apply manifests
+        kubectl apply -f manifests/api-deployment.yaml
+        kubectl apply -f manifests/worker-deployment.yaml
+        
+        # Verify deployment
+        kubectl rollout status deployment/api-deployment --timeout=300s
+        kubectl rollout status deployment/worker-deployment --timeout=300s
+        
+        # Get service info
+        kubectl get services
+
+    - name: Health check
+      run: |
+        sleep 30
+        API_URL=$(kubectl get service api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        curl -f http://$API_URL/health || exit 1
