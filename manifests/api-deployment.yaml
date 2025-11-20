@@ -14,6 +14,7 @@ spec:
       labels:
         app: api
     spec:
+      serviceAccountName: api-service-account  # ← NUEVO
       containers:
       - name: api
         image: IMAGE_PLACEHOLDER_API
@@ -31,6 +32,12 @@ spec:
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 5
+        # Agregar configuración para kubectl
+        env:
+        - name: KUBERNETES_SERVICE_HOST
+          value: "kubernetes.default.svc"
+        - name: KUBERNETES_SERVICE_PORT
+          value: "443"
       imagePullSecrets:
       - name: acr-pull-secret
 ---
