@@ -1,13 +1,17 @@
 from flask import Flask, jsonify, render_template_string
 import os
 import datetime
-import subprocess
-import json
 import socket
+from kubernetes import client, config
+from kubernetes.stream import stream
+import logging
 
 app = Flask(__name__)
 
-# HTML template para la página principal
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+
+# HTML template (se mantiene igual que antes)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="es">
@@ -110,7 +114,7 @@ HTML_TEMPLATE = """
             <p><strong>🏗️ Nuestros Pods:</strong> <span class="status-up">{{ our_pods }} ejecutándose</span></p>
             <p><strong>📈 Total en Cluster:</strong> {{ total_pods }} pods ({{ running_pods }} activos)</p>
             <p><strong>⏰ Uptime:</strong> {{ deployment_time }}</p>
-            <p><strong>🔗 Estado:</strong> <span class="status-up">{{ cluster_status }}</span></p>
+            <p><strong>🔗 Conexión K8s:</strong> <span class="{{ status_class }}">{{ cluster_status }}</span></p>
             <p><strong>🖥️ Host:</strong> {{ hostname }}</p>
         </div>
 
@@ -163,73 +167,86 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def run_kubectl_command(command):
-    """Ejecutar comando kubectl y retornar resultado"""
+def get_kubernetes_client():
+    """Configurar y retornar cliente de Kubernetes"""
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
-        return result.stdout.strip() if result.returncode == 0 else "Error"
+        # Intentar carga in-cluster (cuando corre en K8s)
+        config.load_incluster_config()
+        app.logger.info("✅ Configuración in-cluster cargada")
+        return client.CoreV1Api()
     except Exception as e:
-        return f"Error: {str(e)}"
+        app.logger.error(f"❌ Error carga in-cluster: {e}")
+        try:
+            # Fallback a kubeconfig (desarrollo)
+            config.load_kube_config()
+            app.logger.info("✅ Configuración kubeconfig cargada")
+            return client.CoreV1Api()
+        except Exception as e2:
+            app.logger.error(f"❌ Error carga kubeconfig: {e2}")
+            return None
 
 def get_dynamic_data():
-    """Obtener datos dinámicos del cluster Kubernetes"""
+    """Obtener datos dinámicos usando Kubernetes Client"""
     try:
-        # 1. Obtener todos los pods
-        pods_output = run_kubectl_command("kubectl get pods --all-namespaces --no-headers")
-        if pods_output and not pods_output.startswith("Error"):
-            pod_lines = [line for line in pods_output.split('\n') if line.strip()]
-            running_pods = len([line for line in pod_lines if "Running" in line])
-            total_pods = len(pod_lines)
-        else:
-            running_pods = total_pods = "N/A"
-
-        # 2. Obtener nuestros pods específicos
-        our_pods_output = run_kubectl_command("kubectl get pods -l app --no-headers")
-        if our_pods_output and not our_pods_output.startswith("Error"):
-            our_pods = len([line for line in our_pods_output.split('\n') if line.strip() and "Running" in line])
-        else:
-            our_pods = "N/A"
-
-        # 3. Obtener tiempo del primer pod
-        age_output = run_kubectl_command("kubectl get pods --sort-by=.status.startTime --no-headers -o jsonpath='{.items[0].status.startTime}' 2>/dev/null || echo 'unknown'")
-        deployment_time = "Desconocido"
-        if age_output and age_output != "unknown" and not age_output.startswith("Error"):
-            try:
-                start_time = datetime.datetime.fromisoformat(age_output.replace('Z', '+00:00'))
-                now = datetime.datetime.now(datetime.timezone.utc)
-                delta = now - start_time
-                minutes = int(delta.total_seconds() / 60)
-                if minutes < 60:
-                    deployment_time = f"{minutes}m"
-                else:
-                    hours = minutes // 60
-                    deployment_time = f"{hours}h {minutes % 60}m"
-            except:
-                deployment_time = "N/A"
-        else:
-            deployment_time = "N/A"
-
+        v1 = get_kubernetes_client()
+        if not v1:
+            return {
+                "total_pods": "N/A",
+                "running_pods": "N/A", 
+                "our_pods": "N/A",
+                "deployment_time": "N/A",
+                "cluster_status": "❌ No conectado",
+                "status_class": "status-down"
+            }
+        
+        # 1. Obtener todos los pods en todos los namespaces
+        pods = v1.list_pod_for_all_namespaces(watch=False)
+        total_pods = len(pods.items)
+        running_pods = len([p for p in pods.items if p.status.phase == "Running"])
+        
+        # 2. Obtener nuestros pods específicos (en namespace default con label app)
+        our_pods = 0
+        deployment_time = "N/A"
+        
+        for pod in pods.items:
+            # Contar nuestros pods
+            if (pod.metadata.namespace == "default" and 
+                pod.metadata.labels and 
+                "app" in pod.metadata.labels and
+                pod.status.phase == "Running"):
+                our_pods += 1
+            
+            # Obtener tiempo del primer pod running
+            if pod.status.phase == "Running" and pod.status.start_time:
+                if deployment_time == "N/A":
+                    start_time = pod.status.start_time.replace(tzinfo=None)
+                    now = datetime.datetime.utcnow()
+                    delta = now - start_time
+                    minutes = int(delta.total_seconds() / 60)
+                    if minutes < 60:
+                        deployment_time = f"{minutes}m"
+                    else:
+                        hours = minutes // 60
+                        deployment_time = f"{hours}h {minutes % 60}m"
+        
         return {
             "total_pods": total_pods,
             "running_pods": running_pods,
             "our_pods": our_pods,
             "deployment_time": deployment_time,
-            "cluster_info": "Conectado ✅" if pods_output and not pods_output.startswith("Error") else "Error ❌"
+            "cluster_status": "✅ Conectado",
+            "status_class": "status-up"
         }
         
     except Exception as e:
+        app.logger.error(f"❌ Error obteniendo datos: {e}")
         return {
             "total_pods": "Error",
             "running_pods": "Error",
             "our_pods": "Error", 
             "deployment_time": "Error",
-            "cluster_info": f"Excepción: {str(e)}"
+            "cluster_status": f"❌ Error: {str(e)}",
+            "status_class": "status-down"
         }
 
 def get_system_info():
@@ -237,7 +254,7 @@ def get_system_info():
     return {
         "hostname": socket.gethostname(),
         "current_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "version": "2.1.0"
+        "version": "2.2.0"
     }
 
 @app.route('/')
@@ -253,30 +270,31 @@ def home():
         version=system_info["version"],
         deployment_time=dynamic_data["deployment_time"],
         current_time=system_info["current_time"],
-        cluster_status=dynamic_data["cluster_info"],
+        cluster_status=dynamic_data["cluster_status"],
+        status_class=dynamic_data["status_class"],
         hostname=system_info["hostname"]
     )
 
 @app.route('/health')
 def health():
-    """Endpoint de health check (para el pipeline)"""
+    """Endpoint de health check"""
     return jsonify({
         "status": "healthy",
         "service": "api",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "timestamp": datetime.datetime.now().isoformat()
     })
 
 @app.route('/api/info')
 def api_info():
-    """Endpoint API tradicional (para compatibilidad)"""
+    """Endpoint API tradicional"""
     return jsonify({
         "service": "ci-cd-demo-api",
-        "version": "2.1.0", 
+        "version": "2.2.0", 
         "status": "healthy",
-        "description": "Demo de Pipeline CI/CD con AKS y datos dinámicos",
+        "description": "Demo de Pipeline CI/CD con AKS - Datos en Tiempo Real",
         "timestamp": datetime.datetime.now().isoformat()
     })
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=False)
