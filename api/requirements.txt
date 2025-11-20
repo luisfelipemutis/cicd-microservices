@@ -1,1 +1,2 @@
 Flask==2.3.3
+kubernetes==28.1.0
