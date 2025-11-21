@@ -11,156 +11,317 @@ app = Flask(__name__)
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 
-# HTML template (se mantiene igual que antes)
+# HTML template PROFESIONAL - Sin emojis y con diseño corporativo
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚀 Pipeline CI/CD - AKS Demo</title>
+    <title>Pipeline CI/CD - AKS Dashboard</title>
     <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #34495e;
+            --accent-color: #3498db;
+            --success-color: #27ae60;
+            --warning-color: #e67e22;
+            --danger-color: #e74c3c;
+            --text-light: #ecf0f1;
+            --text-dark: #2c3e50;
+            --bg-light: #f8f9fa;
+            --border-radius: 8px;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             margin: 0;
             padding: 0;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            color: white;
+            color: var(--text-light);
+            line-height: 1.6;
         }
+        
         .container {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
-            border-radius: 20px;
+            border-radius: var(--border-radius);
             padding: 40px;
             text-align: center;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            max-width: 900px;
+            box-shadow: var(--box-shadow);
+            max-width: 1000px;
             margin: 20px;
+            color: var(--text-dark);
         }
-        h1 {
-            font-size: 2.5em;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-        }
-        .subtitle {
-            font-size: 1.3em;
+        
+        .header {
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 20px;
             margin-bottom: 30px;
-            opacity: 0.9;
         }
-        .info-box {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 15px;
-            padding: 20px;
+        
+        h1 {
+            font-size: 2.2em;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+        
+        .subtitle {
+            font-size: 1.1em;
+            color: var(--secondary-color);
+            margin-bottom: 30px;
+            font-weight: 300;
+        }
+        
+        .info-section {
+            background: var(--bg-light);
+            border-radius: var(--border-radius);
+            padding: 25px;
             margin: 20px 0;
             text-align: left;
+            border-left: 4px solid var(--accent-color);
         }
+        
+        .info-section h3 {
+            color: var(--primary-color);
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+        
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: var(--secondary-color);
+        }
+        
+        .info-value {
+            font-weight: 500;
+        }
+        
+        .status-up {
+            color: var(--success-color);
+            font-weight: 600;
+        }
+        
+        .status-down {
+            color: var(--danger-color);
+            font-weight: 600;
+        }
+        
         .tech-stack {
             display: flex;
             justify-content: center;
             flex-wrap: wrap;
-            gap: 10px;
-            margin: 20px 0;
+            gap: 12px;
+            margin: 25px 0;
         }
+        
         .tech-badge {
-            background: rgba(255, 255, 255, 0.2);
+            background: var(--accent-color);
+            color: white;
             padding: 8px 16px;
             border-radius: 20px;
-            font-size: 0.9em;
+            font-size: 0.85em;
+            font-weight: 500;
+            transition: transform 0.2s ease;
         }
-        .stats {
-            display: flex;
-            justify-content: space-around;
-            margin-top: 30px;
-            flex-wrap: wrap;
-            gap: 15px;
+        
+        .tech-badge:hover {
+            transform: translateY(-2px);
         }
-        .stat-item {
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
             text-align: center;
-            flex: 1;
-            min-width: 120px;
+            border-top: 4px solid var(--accent-color);
         }
+        
         .stat-value {
-            font-size: 1.8em;
-            font-weight: bold;
+            font-size: 2em;
+            font-weight: 700;
+            color: var(--primary-color);
             display: block;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+            margin-bottom: 5px;
         }
-        .footer {
-            margin-top: 30px;
+        
+        .stat-label {
             font-size: 0.9em;
-            opacity: 0.7;
+            color: var(--secondary-color);
+            font-weight: 500;
         }
-        .status-up {
-            color: #4CAF50;
+        
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 15px 0;
         }
-        .status-down {
-            color: #f44336;
+        
+        .feature-list li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+        
+        .feature-list li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--success-color);
+            font-weight: bold;
+        }
+        
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 0.85em;
+            color: var(--secondary-color);
+        }
+        
+        .footer-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            h1 {
+                font-size: 1.8em;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎉 ¡Pipeline CI/CD Exitoso!</h1>
-        <div class="subtitle">
-            Microservicios desplegados en Azure Kubernetes Service (AKS)
+        <div class="header">
+            <h1>Pipeline CI/CD - AKS Dashboard</h1>
+            <div class="subtitle">
+                Microservicios desplegados en Azure Kubernetes Service
+            </div>
         </div>
         
-        <div class="info-box">
-            <h3>📊 Estado del Cluster en Tiempo Real:</h3>
-            <p><strong>🏗️ Nuestros Pods:</strong> <span class="status-up">{{ our_pods }} ejecutándose</span></p>
-            <p><strong>📈 Total en Cluster:</strong> {{ total_pods }} pods ({{ running_pods }} activos)</p>
-            <p><strong>⏰ Uptime:</strong> {{ deployment_time }}</p>
-            <p><strong>🔗 Conexión K8s:</strong> <span class="{{ status_class }}">{{ cluster_status }}</span></p>
-            <p><strong>🖥️ Host:</strong> {{ hostname }}</p>
+        <div class="info-section">
+            <h3>Estado del Cluster en Tiempo Real</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Nuestros Pods:</span>
+                    <span class="info-value status-up">{{ our_pods }} ejecutándose</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Total en Cluster:</span>
+                    <span class="info-value">{{ total_pods }} pods ({{ running_pods }} activos)</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Tiempo de Actividad:</span>
+                    <span class="info-value">{{ deployment_time }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Conexión Kubernetes:</span>
+                    <span class="info-value {{ status_class }}">{{ cluster_status }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Servidor:</span>
+                    <span class="info-value">{{ hostname }}</span>
+                </div>
+            </div>
         </div>
 
-        <div class="info-box">
-            <h3>📋 Práctica Realizada:</h3>
+        <div class="info-section">
+            <h3>Práctica Implementada</h3>
             <p>Implementación completa de pipeline CI/CD para microservicios con:</p>
-            <ul>
-                <li><strong>GitHub Actions</strong> para automatización</li>
-                <li><strong>Azure Container Registry (ACR)</strong> para imágenes</li>
-                <li><strong>Azure Kubernetes Service (AKS)</strong> para orquestación</li>
-                <li><strong>Infraestructura como Código</strong> con Terraform</li>
-                <li><strong>Despliegue automatizado</strong> con health checks</li>
+            <ul class="feature-list">
+                <li>GitHub Actions para automatización</li>
+                <li>Azure Container Registry (ACR) para gestión de imágenes</li>
+                <li>Azure Kubernetes Service (AKS) para orquestación</li>
+                <li>Infraestructura como Código con Terraform</li>
+                <li>Despliegue automatizado con verificaciones de salud</li>
             </ul>
         </div>
 
         <div class="tech-stack">
-            <span class="tech-badge">🐳 Docker</span>
-            <span class="tech-badge">⚙️ GitHub Actions</span>
-            <span class="tech-badge">☸️ Kubernetes</span>
-            <span class="tech-badge">🚀 Azure AKS</span>
-            <span class="tech-badge">📦 ACR</span>
-            <span class="tech-badge">🏗️ Terraform</span>
+            <span class="tech-badge">Docker</span>
+            <span class="tech-badge">GitHub Actions</span>
+            <span class="tech-badge">Kubernetes</span>
+            <span class="tech-badge">Azure AKS</span>
+            <span class="tech-badge">Azure Container Registry</span>
+            <span class="tech-badge">Terraform</span>
         </div>
 
-        <div class="stats">
-            <div class="stat-item">
+        <div class="stats-grid">
+            <div class="stat-card">
                 <span class="stat-value">{{ our_pods }}</span>
-                <span>Nuestros Pods</span>
+                <span class="stat-label">Nuestros Pods</span>
             </div>
-            <div class="stat-item">
+            <div class="stat-card">
                 <span class="stat-value">{{ running_pods }}</span>
-                <span>Pods Activos</span>
+                <span class="stat-label">Pods Activos</span>
             </div>
-            <div class="stat-item">
+            <div class="stat-card">
                 <span class="stat-value">{{ deployment_time }}</span>
-                <span>Uptime</span>
+                <span class="stat-label">Tiempo Activo</span>
             </div>
-            <div class="stat-item">
+            <div class="stat-card">
                 <span class="stat-value">{{ version }}</span>
-                <span>Versión</span>
+                <span class="stat-label">Versión</span>
             </div>
         </div>
 
         <div class="footer">
-            <p>🛠️ Desarrollado con DevOps Engineering - Pipeline CI/CD</p>
-            <p>📅 {{ current_time }} | 🖥️ {{ hostname }}</p>
+            <div class="footer-grid">
+                <div>
+                    <strong>Desarrollado con DevOps Engineering</strong>
+                    <br>Pipeline CI/CD
+                </div>
+                <div>
+                    <strong>Fecha y Hora</strong>
+                    <br>{{ current_time }}
+                </div>
+                <div>
+                    <strong>Servidor</strong>
+                    <br>{{ hostname }}
+                </div>
+            </div>
         </div>
     </div>
 </body>
@@ -172,17 +333,17 @@ def get_kubernetes_client():
     try:
         # Intentar carga in-cluster (cuando corre en K8s)
         config.load_incluster_config()
-        app.logger.info("✅ Configuración in-cluster cargada")
+        app.logger.info("Configuración in-cluster cargada")
         return client.CoreV1Api()
     except Exception as e:
-        app.logger.error(f"❌ Error carga in-cluster: {e}")
+        app.logger.error(f"Error carga in-cluster: {e}")
         try:
             # Fallback a kubeconfig (desarrollo)
             config.load_kube_config()
-            app.logger.info("✅ Configuración kubeconfig cargada")
+            app.logger.info("Configuración kubeconfig cargada")
             return client.CoreV1Api()
         except Exception as e2:
-            app.logger.error(f"❌ Error carga kubeconfig: {e2}")
+            app.logger.error(f"Error carga kubeconfig: {e2}")
             return None
 
 def get_dynamic_data():
@@ -195,7 +356,7 @@ def get_dynamic_data():
                 "running_pods": "N/A", 
                 "our_pods": "N/A",
                 "deployment_time": "N/A",
-                "cluster_status": "❌ No conectado",
+                "cluster_status": "No conectado",
                 "status_class": "status-down"
             }
         
@@ -234,18 +395,18 @@ def get_dynamic_data():
             "running_pods": running_pods,
             "our_pods": our_pods,
             "deployment_time": deployment_time,
-            "cluster_status": "✅ Conectado",
+            "cluster_status": "Conectado",
             "status_class": "status-up"
         }
         
     except Exception as e:
-        app.logger.error(f"❌ Error obteniendo datos: {e}")
+        app.logger.error(f"Error obteniendo datos: {e}")
         return {
             "total_pods": "Error",
             "running_pods": "Error",
             "our_pods": "Error", 
             "deployment_time": "Error",
-            "cluster_status": f"❌ Error: {str(e)}",
+            "cluster_status": f"Error: {str(e)}",
             "status_class": "status-down"
         }
 
