@@ -2,77 +2,98 @@ name: CD - Deploy to AKS
 
 on:
   push:
-    branches: [ main ]        # Se ejecuta en cada push a main
-  workflow_dispatch:          # Permite ejecución manual desde GitHub
+    branches: [ main ]        # Se ejecuta automáticamente cada vez que haces push a main
+  workflow_dispatch:          # Permite dispararlo manualmente desde el botón "Run workflow"
 
+# Variables globales del workflow
 env:
-  KUBE_NAMESPACE: default
+  KUBE_NAMESPACE: default      # Namespace donde se desplegará todo
   RESOURCE_GROUP: rg-cicd_2-mexico
   AKS_CLUSTER: aks-cicd_2-cluster
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest     # El job se ejecuta en una VM Ubuntu de GitHub
 
     steps:
-    ##############################################################
-    # 1. Descargar el código del repositorio
-    ##############################################################
+
+    ######################################################################
+    # 1. Descargar tu repositorio para tener acceso a los manifests YAML
+    ######################################################################
     - uses: actions/checkout@v4
 
-    ##############################################################
-    # 2. Login en Azure usando las credenciales del Service Principal
-    ##############################################################
+    ######################################################################
+    # 2. Iniciar sesión en Azure con el Service Principal guardado en GitHub Secrets
+    #    Esto permite ejecutar comandos az, kubectl, etc. dentro del workflow
+    ######################################################################
     - name: Azure Login
       uses: azure/login@v1
       with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        creds: ${{ secrets.AZURE_CREDENTIALS }}   # Contiene tenant, clientId, secret y subscriptionId
 
-    ##############################################################
-    # 3. Obtener credenciales del AKS para ejecutar kubectl
-    ##############################################################
+    ######################################################################
+    # 3. Obtener credenciales kubectl para conectarte al cluster AKS
+    #    Después de este paso ya puedes ejecutar "kubectl apply", "kubectl get", etc.
+    ######################################################################
     - name: Configure AKS credentials
       uses: azure/aks-set-context@v3
       with:
         resource-group: ${{ env.RESOURCE_GROUP }}
         cluster-name: ${{ env.AKS_CLUSTER }}
 
-    ##############################################################
-    # 4. Crear / Actualizar el secret que AKS usa para extraer imágenes del ACR
-    ##############################################################
+    ######################################################################
+    # 4. Crear o actualizar el secret que AKS usa para descargar imágenes del ACR
+    #    (ACR = Azure Container Registry)
+    #
+    #    Esto garantiza que tus pods pueden hacer pull de las imágenes privadas
+    ######################################################################
     - name: Create ACR pull secret
       run: |
         echo "🔐 Creating ACR pull secret in namespace '${{ env.KUBE_NAMESPACE }}'..."
+
+        # docker-registry secret con usuario/contraseña del ACR
         kubectl create secret docker-registry acr-pull-secret \
           --namespace=${{ env.KUBE_NAMESPACE }} \
           --docker-server=${{ secrets.ACR_LOGIN_SERVER }} \
           --docker-username=${{ secrets.ACR_USERNAME }} \
           --docker-password=${{ secrets.ACR_PASSWORD }} \
           --dry-run=client -o yaml | kubectl apply -f -
+        # dry-run + apply = idempotente (si existe, lo actualiza)
 
-    ##############################################################
-    # 5. Reemplazar placeholders de imágenes con el tag del commit
-    #    Esto garantiza que AKS use la última imagen construida en CI
-    ##############################################################
+    ######################################################################
+    # 5. Reemplazar los placeholders de las imágenes dentro de los .yaml
+    #    - IMAGE_PLACEHOLDER_API
+    #    - IMAGE_PLACEHOLDER_WORKER
+    #
+    #    Se reemplazan con:
+    #      acr.azurecr.io/imagen:SHA_DEL_COMMIT
+    #
+    #    Esto garantiza que cada deploy usa la imagen exacta generada en CI
+    ######################################################################
     - name: Replace images in manifests
       run: |
         echo "🔄 Updating image references in manifests..."
 
         sed -i "s|IMAGE_PLACEHOLDER_API|${{ secrets.ACR_LOGIN_SERVER }}/api:${{ github.sha }}|g" manifests/api-deployment.yaml
+
         sed -i "s|IMAGE_PLACEHOLDER_WORKER|${{ secrets.ACR_LOGIN_SERVER }}/worker:${{ github.sha }}|g" manifests/worker-deployment.yaml
 
-    ##############################################################
-    # 6. Aplicar los manifiestos de Kubernetes (deployments + service)
-    ##############################################################
+    ######################################################################
+    # 6. Aplicar los manifiestos a AKS
+    #    - Despliega / actualiza API y Worker
+    #    - Espera a que finalice el rollout (actualización de pods)
+    #    - Muestra estado de pods y servicios
+    ######################################################################
     - name: Deploy to AKS
       run: |
         echo "🚀 Deploying API and Worker to AKS..."
 
         kubectl apply -f manifests/api-deployment.yaml
         kubectl apply -f manifests/worker-deployment.yaml
-        kubectl apply -f manifests/api-service.yaml
 
         echo "⏳ Waiting for deployments to finish..."
+
+        # Espera a que los pods estén listos
         kubectl rollout status deployment/api-deployment --timeout=300s
         kubectl rollout status deployment/worker-deployment --timeout=300s
 
@@ -82,15 +103,18 @@ jobs:
         echo "🌐 Services:"
         kubectl get services -o wide
 
-    ##############################################################
-    # 7. Health check de la API para validar el despliegue
-    ##############################################################
+    ######################################################################
+    # 7. Health check de la API
+    #    - Espera a que el LoadBalancer tenga IP
+    #    - Hace curl al endpoint /health
+    #    - Si falla, marca el deploy como fallido
+    ######################################################################
     - name: Health check
       run: |
         echo "⏳ Waiting for LoadBalancer IP..."
-        sleep 30
+        sleep 30   # Da tiempo para que Azure asigne IP pública
 
         API_IP=$(kubectl get service api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
         echo "Testing API at: http://$API_IP/health"
 
-        curl -f http://$API_IP/health || exit 1
+        curl -f http://$API_IP/health || exit 1    # -f => falla si la respuesta no es 200
