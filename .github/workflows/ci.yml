@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 env:
-  ACR_NAME: acr20251119201901
-  RESOURCE_GROUP: rg-cicd-mexico
+  ACR_NAME: acr20251124194858
+  RESOURCE_GROUP: rg-cicd_1-mexico
 
 jobs:
   test:
