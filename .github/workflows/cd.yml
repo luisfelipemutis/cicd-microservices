@@ -43,7 +43,7 @@ jobs:
         sed -i "s|IMAGE_PLACEHOLDER_WORKER|${{ secrets.ACR_LOGIN_SERVER }}/worker:${{ github.sha }}|g" manifests/worker-deployment.yaml
         
         echo "📌 Applying RBAC..."
-        kubectl apply -f manifests/api-rbca.yaml
+        kubectl apply -f manifests/api-rbac.yaml
 
         echo "📌 Applying API and Worker manifests..."
         kubectl apply -f manifests/api-deployment.yaml
