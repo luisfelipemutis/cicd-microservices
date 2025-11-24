@@ -42,10 +42,14 @@ jobs:
         sed -i "s|IMAGE_PLACEHOLDER_API|${{ secrets.ACR_LOGIN_SERVER }}/api:${{ github.sha }}|g" manifests/api-deployment.yaml
         sed -i "s|IMAGE_PLACEHOLDER_WORKER|${{ secrets.ACR_LOGIN_SERVER }}/worker:${{ github.sha }}|g" manifests/worker-deployment.yaml
         
-        # Apply manifests
+        echo "📌 Applying RBAC..."
+        kubectl apply -f manifests/api-rbca.yaml
+
+        echo "📌 Applying API and Worker manifests..."
         kubectl apply -f manifests/api-deployment.yaml
         kubectl apply -f manifests/worker-deployment.yaml
-        
+        kubectl apply -f manifests/api-service.yaml
+
         # Verify deployment
         kubectl rollout status deployment/api-deployment --timeout=300s
         kubectl rollout status deployment/worker-deployment --timeout=300s
