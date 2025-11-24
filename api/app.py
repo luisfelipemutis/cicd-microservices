@@ -11,7 +11,6 @@ app = Flask(__name__)
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 
-# HTML template PROFESIONAL - Sin emojis y con diseño corporativo
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="es">
