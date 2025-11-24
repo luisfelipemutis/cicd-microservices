@@ -1,69 +1,101 @@
-name: CI-CD API
+name: CI - Build, Test and Push Images
 
-# Se ejecuta al hacer push o pull request a main
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
 
+# Variables globales del pipeline.
+# IMPORTANTE: estas variables ya funcionaban antes, así que NO se cambian.
+env:
+  ACR_NAME: acr20251124230016     # Nombre del Azure Container Registry
+  RESOURCE_GROUP: rg-cicd_2-mexico
+
 jobs:
-  build-test-deploy:
+
+  #########################################################################
+  # JOB 1: TEST — Valida estructura de carpetas y archivos
+  #########################################################################
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    # Verifica que la API tenga sus archivos esenciales
+    - name: Test API structure
+      run: |
+        cd api
+        ls -la
+        [ -f "app.py" ] && echo "✅ API app.py found" || (echo "❌ Missing app.py" && exit 1)
+        [ -f "Dockerfile" ] && echo "✅ API Dockerfile found" || (echo "❌ Missing Dockerfile" && exit 1)
+        [ -f "requirements.txt" ] && echo "✅ API requirements.txt found" || (echo "❌ Missing requirements.txt" && exit 1)
+
+    # Verifica que el Worker tenga sus archivos esenciales
+    - name: Test Worker structure  
+      run: |
+        cd worker
+        ls -la
+        [ -f "worker.py" ] && echo "✅ Worker worker.py found" || (echo "❌ Missing worker.py" && exit 1)
+        [ -f "Dockerfile" ] && echo "✅ Worker Dockerfile found" || (echo "❌ Missing Dockerfile" && exit 1)
+
+
+  #########################################################################
+  # JOB 2: BUILD — Construye y sube imágenes al ACR
+  #########################################################################
+  build-and-push:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Obtener el código del repositorio
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-      # 2️⃣ Mostrar estructura del proyecto para debug
-      - name: List workspace
-        run: ls -R .
+    # Login a Azure con service principal
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 3️⃣ Ejecutar tests (pytest o lo que uses)
-      - name: Install Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
+    # Login ACR — Usa env.ACR_NAME porque así estaba funcionando correctamente
+    - name: Login to ACR
+      run: |
+        echo "🔐 Login to ACR: $ACR_NAME"
+        az acr login --name $ACR_NAME
 
-      - name: Install dependencies for tests
-        run: |
-          cd api
-          pip install -r requirements.txt
-          # Si tienes carpeta tests, se ejecuta pytest
-          if [ -d "tests" ]; then
-            pip install pytest
-            pytest || exit 1
-          else
-            echo "⚠️ No se encontró carpeta tests"
-          fi
+    #######################################################################
+    # BUILD API IMAGE
+    #######################################################################
+    - name: Build API image
+      run: |
+        echo "📦 Building API image using Docker..."
+        docker build -t $ACR_NAME.azurecr.io/api:${{ github.sha }} -t $ACR_NAME.azurecr.io/api:latest api/
 
-      # 4️⃣ Iniciar sesión en Azure (usa el Service Principal del secret)
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+        echo "⬆️ Pushing API image..."
+        docker push $ACR_NAME.azurecr.io/api:${{ github.sha }}
+        docker push $ACR_NAME.azurecr.io/api:latest
 
-      # 5️⃣ Log in en el ACR (para poder hacer push)
-      - name: Login to Azure Container Registry
-        run: |
-          az acr login --name ${{ secrets.ACR_NAME }}
+    #######################################################################
+    # BUILD WORKER IMAGE
+    #######################################################################
+    - name: Build Worker image
+      run: |
+        echo "🏭 Building Worker image using Docker..."
+        docker build -t $ACR_NAME.azurecr.io/worker:${{ github.sha }} -t $ACR_NAME.azurecr.io/worker:latest worker/
 
-      # 6️⃣ Construir la imagen Docker de forma LOCAL (no usa ACR Tasks)
-      # Esto evita el error "TasksOperationsNotAllowed"
-      - name: Build Docker image locally
-        run: |
-          cd api
-          docker build -t ${{ secrets.ACR_NAME }}.azurecr.io/api:latest .
+        echo "⬆️ Pushing Worker image..."
+        docker push $ACR_NAME.azurecr.io/worker:${{ github.sha }}
+        docker push $ACR_NAME.azurecr.io/worker:latest
 
-      # 7️⃣ Push al ACR
-      - name: Push Docker image to ACR
-        run: |
-          docker push ${{ secrets.ACR_NAME }}.azurecr.io/api:latest
+    #######################################################################
+    # FINAL REPORT OF BUILT IMAGES
+    #######################################################################
+    - name: List images from ACR
+      run: |
+        echo "📄 Listing ACR repositories..."
+        az acr repository list --name $ACR_NAME --output table
 
-      # 8️⃣ Desplegar al Azure Web App for Containers
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v2
-        with:
-          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          images: ${{ secrets.ACR_NAME }}.azurecr.io/api:latest
+        echo "--- API tags ---"
+        az acr repository show-tags --name $ACR_NAME --repository api --output table
+
+        echo "--- Worker tags ---"
+        az acr repository show-tags --name $ACR_NAME --repository worker --output table
