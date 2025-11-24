@@ -21,7 +21,7 @@ jobs:
         cd api
         ls -la
         [ -f "app.py" ] && echo "✅ API app.py found" || exit 1
-        [ -f "Dockerfile" ] && echo "✅ API Dockerfile found" || exit 1
+        [ - f "Dockerfile" ] && echo "✅ API Dockerfile found" || exit 1
         [ -f "requirements.txt" ] && echo "✅ API requirements.txt found" || exit 1
     
     - name: Test Worker structure  
@@ -43,69 +43,45 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    ##############################################################
-    # BUILD API IMAGE
-    ##############################################################
-    - name: Build and push API image
+    - name: ACR Login
       run: |
-        echo "📦 Building API image..."
-        az acr build \
-          --registry ${{ env.ACR_NAME }} \
-          --image api:${{ github.sha }} \
-          --image api:latest \
-          --file api/Dockerfile \
-          ./api/
-
-    - name: Validate API image exists
-      run: |
-        echo "🔍 Checking API tag in ACR..."
-        FOUND=$(az acr repository show-tags \
-          --name ${{ env.ACR_NAME }} \
-          --repository api \
-          --query "contains(@, '${{ github.sha }}')")
-        
-        if [[ "$FOUND" == "false" ]]; then
-          echo "❌ ERROR: API image tag ${{ github.sha }} NOT FOUND in ACR!"
-          exit 1
-        fi
-
-        echo "✅ API image tag verified."
+        echo "🔐 Logging into ACR..."
+        az acr login --name ${{ env.ACR_NAME }}
 
     ##############################################################
-    # BUILD WORKER IMAGE
+    # BUILD + PUSH API WITHOUT ACR TASKS
     ##############################################################
-    - name: Build and push Worker image
+    - name: Build API image locally
       run: |
-        echo "🏭 Building Worker image..."
-        az acr build \
-          --registry ${{ env.ACR_NAME }} \
-          --image worker:${{ github.sha }} \
-          --image worker:latest \
-          --file worker/Dockerfile \
-          ./worker/
+        echo "📦 Building API image locally..."
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/api:${{ github.sha }} -t ${{ env.ACR_NAME }}.azurecr.io/api:latest api/
 
-    - name: Validate Worker image exists
+    - name: Push API image
       run: |
-        echo "🔍 Checking Worker tag in ACR..."
-        FOUND=$(az acr repository show-tags \
-          --name ${{ env.ACR_NAME }} \
-          --repository worker \
-          --query "contains(@, '${{ github.sha }}')")
-        
-        if [[ "$FOUND" == "false" ]]; then
-          echo "❌ ERROR: Worker image tag ${{ github.sha }} NOT FOUND in ACR!"
-          exit 1
-        fi
-
-        echo "✅ Worker image tag verified."
+        echo "⬆️ Pushing API image..."
+        docker push ${{ env.ACR_NAME }}.azurecr.io/api:${{ github.sha }}
+        docker push ${{ env.ACR_NAME }}.azurecr.io/api:latest
 
     ##############################################################
-    # FINAL VERIFICATION
+    # BUILD + PUSH WORKER WITHOUT ACR TASKS
     ##############################################################
-    - name: Show final image list
+    - name: Build Worker image locally
       run: |
-        echo "📄 Listing repositories:"
-        az acr repository list --name ${{ env.ACR_NAME }} --output table
+        echo "🏭 Building Worker image locally..."
+        docker build -t ${{ env.ACR_NAME }}.azurecr.io/worker:${{ github.sha }} -t ${{ env.ACR_NAME }}.azurecr.io/worker:latest worker/
+
+    - name: Push Worker image
+      run: |
+        echo "⬆️ Pushing Worker image..."
+        docker push ${{ env.ACR_NAME }}.azurecr.io/worker:${{ github.sha }}
+        docker push ${{ env.ACR_NAME }}.azurecr.io/worker:latest
+
+    ##############################################################
+    # VALIDACION FINAL
+    ##############################################################
+    - name: Validate tags in ACR
+      run: |
+        echo "🔍 Checking images in ACR..."
 
         echo "--- API tags ---"
         az acr repository show-tags --name ${{ env.ACR_NAME }} --repository api --output table

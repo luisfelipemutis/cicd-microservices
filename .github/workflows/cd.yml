@@ -2,8 +2,8 @@ name: CD - Deploy to AKS
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ main ]        # Se ejecuta en cada push a main
+  workflow_dispatch:          # Permite ejecución manual desde GitHub
 
 env:
   KUBE_NAMESPACE: default
@@ -13,50 +13,84 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
+    ##############################################################
+    # 1. Descargar el código del repositorio
+    ##############################################################
     - uses: actions/checkout@v4
 
+    ##############################################################
+    # 2. Login en Azure usando las credenciales del Service Principal
+    ##############################################################
     - name: Azure Login
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+    ##############################################################
+    # 3. Obtener credenciales del AKS para ejecutar kubectl
+    ##############################################################
     - name: Configure AKS credentials
       uses: azure/aks-set-context@v3
       with:
         resource-group: ${{ env.RESOURCE_GROUP }}
         cluster-name: ${{ env.AKS_CLUSTER }}
 
+    ##############################################################
+    # 4. Crear / Actualizar el secret que AKS usa para extraer imágenes del ACR
+    ##############################################################
     - name: Create ACR pull secret
       run: |
-        echo "🔐 Creating ACR pull secret..."
+        echo "🔐 Creating ACR pull secret in namespace '${{ env.KUBE_NAMESPACE }}'..."
         kubectl create secret docker-registry acr-pull-secret \
+          --namespace=${{ env.KUBE_NAMESPACE }} \
           --docker-server=${{ secrets.ACR_LOGIN_SERVER }} \
           --docker-username=${{ secrets.ACR_USERNAME }} \
           --docker-password=${{ secrets.ACR_PASSWORD }} \
           --dry-run=client -o yaml | kubectl apply -f -
 
-    - name: Deploy to AKS
+    ##############################################################
+    # 5. Reemplazar placeholders de imágenes con el tag del commit
+    #    Esto garantiza que AKS use la última imagen construida en CI
+    ##############################################################
+    - name: Replace images in manifests
       run: |
-        # Replace image placeholders in manifests
+        echo "🔄 Updating image references in manifests..."
+
         sed -i "s|IMAGE_PLACEHOLDER_API|${{ secrets.ACR_LOGIN_SERVER }}/api:${{ github.sha }}|g" manifests/api-deployment.yaml
         sed -i "s|IMAGE_PLACEHOLDER_WORKER|${{ secrets.ACR_LOGIN_SERVER }}/worker:${{ github.sha }}|g" manifests/worker-deployment.yaml
-        
-        echo "📌 Applying API and Worker manifests..."
+
+    ##############################################################
+    # 6. Aplicar los manifiestos de Kubernetes (deployments + service)
+    ##############################################################
+    - name: Deploy to AKS
+      run: |
+        echo "🚀 Deploying API and Worker to AKS..."
+
         kubectl apply -f manifests/api-deployment.yaml
         kubectl apply -f manifests/worker-deployment.yaml
         kubectl apply -f manifests/api-service.yaml
 
-        # Verify deployment
+        echo "⏳ Waiting for deployments to finish..."
         kubectl rollout status deployment/api-deployment --timeout=300s
         kubectl rollout status deployment/worker-deployment --timeout=300s
-        
-        # Get service info
-        kubectl get services
 
+        echo "📦 AKS Deployments:"
+        kubectl get pods -o wide
+
+        echo "🌐 Services:"
+        kubectl get services -o wide
+
+    ##############################################################
+    # 7. Health check de la API para validar el despliegue
+    ##############################################################
     - name: Health check
       run: |
+        echo "⏳ Waiting for LoadBalancer IP..."
         sleep 30
+
         API_IP=$(kubectl get service api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
         echo "Testing API at: http://$API_IP/health"
+
         curl -f http://$API_IP/health || exit 1
