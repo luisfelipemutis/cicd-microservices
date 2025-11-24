@@ -34,6 +34,7 @@ jobs:
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
+
     steps:
     - uses: actions/checkout@v4
 
@@ -42,6 +43,9 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+    ##############################################################
+    # BUILD API IMAGE
+    ##############################################################
     - name: Build and push API image
       run: |
         echo "📦 Building API image..."
@@ -50,9 +54,26 @@ jobs:
           --image api:${{ github.sha }} \
           --image api:latest \
           --file api/Dockerfile \
-          ./api/ \
-          --no-logs
+          ./api/
 
+    - name: Validate API image exists
+      run: |
+        echo "🔍 Checking API tag in ACR..."
+        FOUND=$(az acr repository show-tags \
+          --name ${{ env.ACR_NAME }} \
+          --repository api \
+          --query "contains(@, '${{ github.sha }}')")
+        
+        if [[ "$FOUND" == "false" ]]; then
+          echo "❌ ERROR: API image tag ${{ github.sha }} NOT FOUND in ACR!"
+          exit 1
+        fi
+
+        echo "✅ API image tag verified."
+
+    ##############################################################
+    # BUILD WORKER IMAGE
+    ##############################################################
     - name: Build and push Worker image
       run: |
         echo "🏭 Building Worker image..."
@@ -61,14 +82,33 @@ jobs:
           --image worker:${{ github.sha }} \
           --image worker:latest \
           --file worker/Dockerfile \
-          ./worker/ \
-          --no-logs
+          ./worker/
 
-    - name: Verify images
+    - name: Validate Worker image exists
       run: |
-        echo "✅ Verifying images in ACR..."
+        echo "🔍 Checking Worker tag in ACR..."
+        FOUND=$(az acr repository show-tags \
+          --name ${{ env.ACR_NAME }} \
+          --repository worker \
+          --query "contains(@, '${{ github.sha }}')")
+        
+        if [[ "$FOUND" == "false" ]]; then
+          echo "❌ ERROR: Worker image tag ${{ github.sha }} NOT FOUND in ACR!"
+          exit 1
+        fi
+
+        echo "✅ Worker image tag verified."
+
+    ##############################################################
+    # FINAL VERIFICATION
+    ##############################################################
+    - name: Show final image list
+      run: |
+        echo "📄 Listing repositories:"
         az acr repository list --name ${{ env.ACR_NAME }} --output table
+
         echo "--- API tags ---"
         az acr repository show-tags --name ${{ env.ACR_NAME }} --repository api --output table
+
         echo "--- Worker tags ---"
         az acr repository show-tags --name ${{ env.ACR_NAME }} --repository worker --output table
