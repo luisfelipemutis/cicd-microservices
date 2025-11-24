@@ -7,8 +7,8 @@ on:
 
 env:
   KUBE_NAMESPACE: default
-  RESOURCE_GROUP: rg-cicd_1-mexico
-  AKS_CLUSTER: aks-cicd_1-cluster
+  RESOURCE_GROUP: rg-cicd_2-mexico
+  AKS_CLUSTER: aks-cicd_2-cluster
 
 jobs:
   deploy:
@@ -42,9 +42,6 @@ jobs:
         sed -i "s|IMAGE_PLACEHOLDER_API|${{ secrets.ACR_LOGIN_SERVER }}/api:${{ github.sha }}|g" manifests/api-deployment.yaml
         sed -i "s|IMAGE_PLACEHOLDER_WORKER|${{ secrets.ACR_LOGIN_SERVER }}/worker:${{ github.sha }}|g" manifests/worker-deployment.yaml
         
-        echo "📌 Applying RBAC..."
-        kubectl apply -f manifests/api-rbac.yaml
-
         echo "📌 Applying API and Worker manifests..."
         kubectl apply -f manifests/api-deployment.yaml
         kubectl apply -f manifests/worker-deployment.yaml
