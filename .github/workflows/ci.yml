@@ -15,22 +15,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
+    ###########################################################
+    # 🔍 VALIDACIÓN DE ESTRUCTURA API
+    ###########################################################
     - name: Test API structure
       run: |
+        echo "🔎 Checking API structure..."
         cd api
         ls -la
-        [ -f "app.py" ] && echo "✅ API app.py found" || exit 1
-        [ - f "Dockerfile" ] && echo "✅ API Dockerfile found" || exit 1
-        [ -f "requirements.txt" ] && echo "✅ API requirements.txt found" || exit 1
-    
-    - name: Test Worker structure  
+        
+        if [ ! -f "app.py" ]; then
+          echo "❌ ERROR: app.py not found"
+          exit 1
+        fi
+
+        if [ ! -f "Dockerfile" ]; then
+          echo "❌ ERROR: API Dockerfile not found"
+          exit 1
+        fi
+
+        if [ ! -f "requirements.txt" ]; then
+          echo "❌ ERROR: API requirements.txt not found"
+          exit 1
+        fi
+
+        echo "✅ API structure OK."
+
+
+    ###########################################################
+    # 🔍 VALIDACIÓN DE ESTRUCTURA WORKER
+    ###########################################################
+    - name: Test Worker structure
       run: |
+        echo "🔎 Checking Worker structure..."
         cd worker
         ls -la
-        [ -f "worker.py" ] && echo "✅ Worker worker.py found" || exit 1
-        [ -f "Dockerfile" ] && echo "✅ Worker Dockerfile found" || exit 1
 
+        if [ ! -f "worker.py" ]; then
+          echo "❌ ERROR: worker.py not found"
+          exit 1
+        fi
+
+        if [ ! -f "Dockerfile" ]; then
+          echo "❌ ERROR: Worker Dockerfile not found"
+          exit 1
+        fi
+
+        echo "✅ Worker structure OK."
+
+
+  #############################################################
+  # 📦 BUILD & PUSH de imágenes a ACR
+  #############################################################
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
@@ -43,45 +80,74 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: ACR Login
-      run: |
-        echo "🔐 Logging into ACR..."
-        az acr login --name ${{ env.ACR_NAME }}
 
     ##############################################################
-    # BUILD + PUSH API WITHOUT ACR TASKS
+    # 🚀 BUILD API IMAGE
     ##############################################################
-    - name: Build API image locally
+    - name: Build and push API image
       run: |
-        echo "📦 Building API image locally..."
-        docker build -t ${{ env.ACR_NAME }}.azurecr.io/api:${{ github.sha }} -t ${{ env.ACR_NAME }}.azurecr.io/api:latest api/
+        echo "📦 Building API image..."
+        az acr build \
+          --registry ${{ env.ACR_NAME }} \
+          --image api:${{ github.sha }} \
+          --image api:latest \
+          --file api/Dockerfile \
+          ./api/
 
-    - name: Push API image
+
+    - name: Validate API image exists
       run: |
-        echo "⬆️ Pushing API image..."
-        docker push ${{ env.ACR_NAME }}.azurecr.io/api:${{ github.sha }}
-        docker push ${{ env.ACR_NAME }}.azurecr.io/api:latest
+        echo "🔍 Checking API tag in ACR..."
+        FOUND=$(az acr repository show-tags \
+          --name ${{ env.ACR_NAME }} \
+          --repository api \
+          --query "contains(@, '${{ github.sha }}')")
+
+        if [[ "$FOUND" == "false" ]]; then
+          echo "❌ ERROR: API image tag ${{ github.sha }} NOT FOUND in ACR!"
+          exit 1
+        fi
+
+        echo "✅ API image tag verified."
+
 
     ##############################################################
-    # BUILD + PUSH WORKER WITHOUT ACR TASKS
+    # 🏭 BUILD WORKER IMAGE
     ##############################################################
-    - name: Build Worker image locally
+    - name: Build and push Worker image
       run: |
-        echo "🏭 Building Worker image locally..."
-        docker build -t ${{ env.ACR_NAME }}.azurecr.io/worker:${{ github.sha }} -t ${{ env.ACR_NAME }}.azurecr.io/worker:latest worker/
+        echo "🏭 Building Worker image..."
+        az acr build \
+          --registry ${{ env.ACR_NAME }} \
+          --image worker:${{ github.sha }} \
+          --image worker:latest \
+          --file worker/Dockerfile \
+          ./worker/
 
-    - name: Push Worker image
+
+    - name: Validate Worker image exists
       run: |
-        echo "⬆️ Pushing Worker image..."
-        docker push ${{ env.ACR_NAME }}.azurecr.io/worker:${{ github.sha }}
-        docker push ${{ env.ACR_NAME }}.azurecr.io/worker:latest
+        echo "🔍 Checking Worker tag in ACR..."
+        FOUND=$(az acr repository show-tags \
+          --name ${{ env.ACR_NAME }} \
+          --repository worker \
+          --query "contains(@, '${{ github.sha }}')")
+
+        if [[ "$FOUND" == "false" ]]; then
+          echo "❌ ERROR: Worker image tag ${{ github.sha }} NOT FOUND in ACR!"
+          exit 1
+        fi
+
+        echo "✅ Worker image tag verified."
+
 
     ##############################################################
-    # VALIDACION FINAL
+    # 📄 Final List of Generated Images
     ##############################################################
-    - name: Validate tags in ACR
+    - name: Show final image list
       run: |
-        echo "🔍 Checking images in ACR..."
+        echo "📄 Listing repositories:"
+        az acr repository list --name ${{ env.ACR_NAME }} --output table
 
         echo "--- API tags ---"
         az acr repository show-tags --name ${{ env.ACR_NAME }} --repository api --output table
